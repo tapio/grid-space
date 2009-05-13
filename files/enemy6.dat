@@ -1,0 +1,10 @@
+name=DiamondMine
+points=1000
+damage=1100
+speed=0
+shields=25000
+rotate=2
+
+# This fellow doesn't move at all, but it is
+# extremely hard to destroy and will kill you
+# instantly if hit.

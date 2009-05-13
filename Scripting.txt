@@ -1,0 +1,75 @@
+Scripting.txt
+--------------
+
+This file describes how to make new enemies and weapons easily, without touching the source code.
+For more complex modifications, full source code is also available.
+
+There can be maximum number of 24 enemies, 24 weapons, 24 shot images and 24 particle images.
+For all enemies to appear in the game, there must be at least equal amount of weapons, because new enemy type is introduced when new weapon is earned.
+For examples, look enemy#.dat files or weapons.dat file.
+All of these files are located in the files/ -subfolder.
+
+
+ENEMIES
+For an enemy to appear in the game, two files are needed:
+enemy#.png
+enemy#.dat
+where # is a running identification number.
+
+enemy#.png is the image of the enemy in Portable Network Graphic -format. Preferably 32x32 in size.
+
+enemy#.dat includes the stats and behaviour of the enemy.
+It consists of variables and their values, separated with = character.
+
+List of possible variables and their descriptions:
+
+Variable	Default	Description
+------------------------------------------
+name		""	the name of the enemy
+points		10	how many points killing this is worth
+damage		50	how much the enemy hurts player when they collide
+speed		0	the speed of the enemy in pixels/frame
+shields		10	how much damage the enemy can withstand before exploding
+homing		0	how quickly enemy turns to face player (degrees/frame, values over 179 mean instantly)
+turning		0	how many degrees/frame the enemy is allowed to turn, 0 for instant turns
+turningfreq	0	delay in milliseconds when the enemy turns randomly (0 to disable)
+rotate		0	how many degrees/frame the enemy rotates its image; doesn't affect moving
+trail		0	the index number of particle image to be used for trailing particles, 0 to disable
+
+Those variables that are not used, can be left away; they are assigned as default values.
+
+
+PARTICLES
+These particles are used for making trails and thruster effects for enemies.
+They are stored in files named particle#.png, where # is a running id number.
+The images are imagestrips with square frames (i.e. width same as height).
+The particle can have over 100 frames, but they must all be arranged horizontaly (no frames below others).
+In game, the first frame (i.e. the most left) is shown first.
+
+
+WEAPONS
+All weapons are defined in the "weapons.dat" file.
+Projectile / shot images are in png format and named shot#.png, where # is a running identification number.
+The size is preferably under 8x8 pixels.
+
+The weapons.dat contains the stats of each weapon arranged from first to last.
+Every one of the declarations starts with the row:
+[weapon]
+
+
+List of possible variables and their descriptions:
+
+Variable	Default	Description
+------------------------------------------
+ammotype	1	index number of the ammunition image to use
+damage		0	how much damage is inflicted to enemies upon hit
+speed		0	how many pixels the shot travels in a frame
+range		0	how many pixels the shot can travel
+barrels		0	how many shots are fired at once i.e. how many barrels the gun has
+arc		0	how wide the shooting arc is, doesn't matter if barrels is set to 1
+rearbarrels	0	how many barrels there are pointing backwards
+reararc		0	how wide the backwards shooting arc is
+points		2000	how many points (in addition to those got beforehand) has to be gathered to get this weapon
+
+-----------
+End of File

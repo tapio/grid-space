@@ -1,0 +1,10 @@
+name=X
+points=70
+damage=300
+speed=6
+shields=150
+rotate=10
+trail=4
+
+# This enemy just bounces randomly off the walls.
+# It is very quick, though, so be prepared!

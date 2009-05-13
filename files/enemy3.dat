@@ -1,0 +1,11 @@
+name=Goldy
+points=200
+damage=350
+speed=4
+shields=800
+homing=30
+rotate=10
+
+# Goldy is an advanced version of Greeny: it
+# is faster and tougher plus it hurts more.
+# However, Goldy doesn't turn as quickly as Greeny

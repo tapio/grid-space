@@ -1,0 +1,12 @@
+name=Ufo
+points=300
+damage=400
+speed=3
+shields=1800
+homing=5
+turningfreq=750
+turning=90
+trail=1
+
+# Ufo follows player but makes random turns,
+# making it's movement harder to predict.

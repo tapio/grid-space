@@ -1,0 +1,869 @@
+// Grid Space v1.01
+// by Tapio Vierros
+// Source Code
+// License: Free to use, modify and adapt
+
+Const version = 1.01
+
+Include "cbSpecialFX.cb"
+Global scrX, scrY
+f = OpenToRead("Config.ini")
+    scrX = Int(ReadValue(f,"ScreenWidth","800"))
+    scrY = Int(ReadValue(f,"ScreenHeight","600"))
+    scrM = Int(ReadValue(f,"WindowedMode","0"))
+CloseFile f
+
+If Not GFXModeExists(scrX,scrY,32) Then MakeError "Your graphics card doesn't support "+scrX+"x"+scrY+" resolution. Change it by modifying Config.ini"
+
+SCREEN scrX,scrY,0,scrM
+SetWindow "Grid Sector"
+ChDir "files"
+
+Global img_loading : img_loading = LoadImage("loading.png")
+Loading(0)
+FrameLimit 60
+Global g_frameTime As Float
+g_frameTime = 0.0
+Global g_tmpTime As Integer
+g_tmpTime = 0
+Global fidl: fidl = 3
+
+
+
+If Not FileExists("C:\Windows\Fonts\NextGames.ttf") Then CopyFile "NextGames.ttf", "C:\Windows\Fonts\NextGames.ttf": Wait 1500: WriteLog("Font installed.")
+If FileExists("log.txt") Then DeleteFile "log.txt"
+WriteLog("Resolution successfully set!")
+WriteLog("Starting to load media.")
+Loading(10)
+Const maximum = 24
+Const grav = 15.0
+
+Global img_title   : img_title    = LoadImage("title.png")
+Global img_hiscores: img_hiscores = LoadImage("hiscores.png")
+Global img_help    : img_help     = LoadImage("help.png")
+If scrX < ImageWidth(img_help) Or scrY < ImageHeight(img_help) Then ResizeImage img_help, scrX, scrY
+
+
+// Buttons
+Dim img_buttons(2,1)
+For i = 0 To 1
+    img_buttons(0,i) = LoadImage("button_StartGame"+Str(i)+".png")
+    img_buttons(1,i) = LoadImage("button_Instructions"+Str(i)+".png")
+    img_buttons(2,i) = LoadImage("button_Exit"+Str(i)+".png")
+Next i
+Loading(15)
+// Sounds
+Const numMusics = 2
+Global snd_shot1, snd_expl, snd_click
+Global ch_menuloop, ch_bgmusic
+snd_shot1 = LoadSound("shot1.wav")
+snd_expl  = LoadSound("boom.wav")
+snd_click = LoadSound("click.wav")
+Loading(20)
+
+// Enemies
+Type Enemy
+    Field points
+    Field obj
+    Field dmg
+    Field enetype
+    Field dir
+    Field shields
+    Field speed#
+    Field homing
+    Field rotate
+    Field turning
+    Field turningfreq
+    Field turningtimer
+    Field pem_trail
+End Type
+
+Global numEnemyTypes
+Dim enemystats(maximum,10)
+Dim img_enemies(maximum)
+Dim obj_enemies(maximum)
+For i = 1 To 24
+    If Not FileExists("enemy"+Str(i)+".png") Then Exit
+    numEnemyTypes+1
+    LoadEnemy(i)
+    img_enemies(i) = LoadImage("enemy"+Str(i)+".png")
+    obj_enemies(i) = LoadObject("enemy"+Str(i)+".png", 72)
+    ShowObject obj_enemies(i), False
+Next i
+Loading(30)
+// Wormholes
+Type Wormhole
+    Field obj
+    Field mass
+    Field criticalmass
+End Type
+Type wormholeDot
+    Field obj
+    Field rangeleft
+End Type
+obj_wormhole = LoadObject("wormhole.png",45)'180)//////////////////////////////////'135)
+ShowObject obj_wormhole, False
+img_wormhole_expl = LoadImage("wormhole_expl.png")
+Loading(70)
+// Shots
+Type shot
+    Field obj
+    Field rangeleft
+    Field speed#
+    Field dmg
+End Type
+
+Global numShotTypes
+Dim obj_shots(maximum)
+For i = 1 To maximum
+    If Not FileExists("shot"+Str(i)+".png") Then Exit
+    numShotTypes+1
+    obj_shots(i) = LoadObject("shot"+Str(i)+".png", 36)
+    ShowObject obj_shots(i), False
+Next i
+Loading(75)
+
+// Weapons
+Global numWeapons
+Dim weapons(maximum,10) As Float
+LoadWeapons("weapons.dat")
+
+Global isMod
+isMod = CheckHash()
+Loading(80)
+
+// Border
+Const mapW = 32
+Const mapH = 24
+Global border
+border = MakeMap(mapW,mapH,32,32)
+tileset = LoadImage("space.png")
+PaintObject border, tileset
+For j = 1 To MapHeight()
+    For i = 1 To MapWidth()
+        tile = 0
+        If j = 1 Or j = MapHeight() Then tile = 1
+        If i = 1 Or i = MapWidth()  Then tile = 2
+        EditMap border,0,i,j,tile
+    Next i
+Next j
+EditMap border,0,1,         1,          3
+EditMap border,0,MapWidth(),1,          4
+EditMap border,0,MapWidth(),MapHeight(),5
+EditMap border,0,1,         MapHeight(),6
+Loading(85)
+
+// Backdrop
+Global obj_grid
+img_grid = LoadAnimImage("grid.png",31,31,0,4)
+obj_grid = MakeObjectFloor()
+PaintObject obj_grid, img_grid
+ShowObject obj_grid, OFF
+PositionObject obj_grid, 0, 0, -3
+LoopObject obj_grid, 0, 3, .1
+Loading(90)
+
+// Particles
+Global numParticleTypes
+Dim img_particles(maximum)
+Dim particleframes(maximum)
+For i = 1 To maximum
+    If Not FileExists("particle"+Str(i)+".png") Then Exit
+    numParticleTypes+1
+    temp              = LoadImage("particle"+Str(i)+".png")
+    imgsize           = ImageHeight(temp)
+    particleframes(i) = ImageWidth(temp) / imgsize
+    img_particles(i)  = LoadAnimImage("particle"+Str(i)+".png", imgsize, imgsize, 0, particleframes(i))
+Next i
+
+pem_thrust = MakeEmitter(img_particles(1), 60)
+ParticleAnimation pem_thrust, 100
+ParticleMovement  pem_thrust, 1,0
+ParticleEmission  pem_thrust, 5, 0, 5
+
+Global img_jump
+img_jump = LoadImage("jump.png")
+
+obj_mousedummy = MakeObject()
+Global cursor, crosshair
+crosshair = LoadImage("crosshair.png")
+cursor    = LoadImage("cursor.png")
+ShowMouse cursor
+
+img_ship = LoadImage("ship.png")
+obj_ship = LoadObject("ship.png", 90)
+CameraFollow obj_ship,1,10
+ShowObject obj_ship, False
+Loading(95)
+
+// Hiscore
+    Const cryptword = "1q2w3ert#y2uB¤o2$03sfjdw4i=)(/&%¤ERTalyFGYH"
+    Const His = 5
+    Dim HiScore(His)
+    Dim HiNames$(His)
+    LoadHiScore()
+
+// Fonts
+Global font
+font = LoadFont("NextGames",24)
+InitFlashFont("NextGames",24)
+SetFont font
+
+// Vars
+Global score, multiplier#, eneCount, weaponlvl
+Dim tim_reload, tim_spawn, tim_wormhole, tim_checkFPS
+Dim xmove#,ymove#
+
+WriteLog("Media loaded.")
+Loading(100):Cls
+ShowObject obj_grid, ON
+SAFEEXIT OFF
+Menu()
+
+// New game initialization //
+Start:
+WriteLog("Initializing new game.")
+Randomize Timer()
+ch_bgmusic = PlaySound("../music/music"+Rand(1,numMusics)+".ogg")
+DrawToWorld ON,ON,OFF
+ShowObject obj_ship, ON
+PositionObject obj_ship,0,0
+
+g_frameTime    = 0.0
+g_tmpTime      = 0.0
+xmove          = 0.0
+ymove          = 0.0
+maxShields     = 1000
+shields#       = maxShields
+acc#           = .5
+fric#          = .98
+reload_delay   = 100
+spawn_delay    = 1000
+multiplier     = 1.0
+score          = 0
+weaponlvl      = 1
+wormhole_delay = 10000
+pointsToNextWp = weapons(1,9)
+tim_wormhole   = Timer()
+eneCount       = 0
+fidl           = 3
+
+WriteLog("Entering main game loop.")
+
+    //* MAIN LOOP *//
+Repeat
+
+    UpdateFrameTimer()
+    If Timer() > tim_checkFPS + 500 Then           // Dynamic fidelity
+        FPScount = FPS()
+        If FPScount < 50 Then fidl = Max(1,fidl-1)
+        If FPScount => 55 Then fidl = Min(3,fidl+1)
+        tim_checkFPS = Timer()
+    EndIf
+    
+    If KeyHit(cbKeyP) Then Pause()
+    If Timer() => tim_spawn + spawn_delay Then          // SPAWN ENEMY
+        Repeat
+            spawnx = Rand(-mapW/2+1,mapW/2-1)*32
+            spawny = Rand(-mapH/2+1,mapH/2-1)*32
+        Until Distance(ObjectX(obj_ship), ObjectY(obj_ship), spawnx, spawny) => 96
+        SpawnEnemy(Rand(1,Min(weaponlvl,numEnemyTypes)), spawnx, spawny)
+        score+5: tim_spawn = Timer(): spawn_delay = Max(spawn_delay-5,200)
+    EndIf
+    If Timer() => tim_wormhole + wormhole_delay Then    // SPAWN WORMHOLE
+        newHole.WORMHOLE = New(WORMHOLE)
+        newHole\obj = CloneObject(obj_wormhole)
+        Repeat
+            farenough = 1
+            PositionObject newHole\obj, Rand(-mapW/2+3,mapW/2-3)*32, Rand(-mapH/2+3,mapH/2-3)*32
+            For iHole.WORMHOLE = Each WORMHOLE
+                If newHole <> iHole And Distance2(iHole\obj,newHole\obj) < 256 Then farenough = 0: Exit
+            Next iHole
+        Until Distance2(newHole\obj, obj_ship) => 160 And farenough = 1
+        ObjectOrder newHole\obj, -1
+        newHole\criticalmass = weaponlvl*1000
+        ExplodeImage(img_wormhole_expl, ObjectX(newHole\obj)-64, -ObjectY(newHole\obj)-64, 30,30, 150,400, 8,14, 0,0)
+        tim_wormhole = Timer()
+        wormhole_delay = Rand(15000,30000)
+    EndIf
+
+    score+1
+    multiplier+.001
+    shields = Min(shields+1*corr(),maxShields)
+    xmove = xmove * fric
+    ymove = ymove * fric
+
+    PositionObject obj_mousedummy, MouseWX(), MouseWY()
+    RotateObject obj_ship, CurveAngle(GetAngle2(obj_ship, obj_mousedummy), ObjectAngle(obj_ship), 5)
+
+    'fire
+    If MouseDown(1) And Timer() => tim_reload + reload_delay Then Fire(ObjectX(obj_ship), ObjectY(obj_ship), ObjectAngle(obj_ship), Distance(0,0,xmove,ymove), weaponlvl): tim_reload = Timer()
+    'thurst
+    If MouseDown(2) Then
+        If Distance2(obj_ship, obj_mousedummy) > 10 Then xmove = xmove + Cos(ObjectAngle(obj_ship)) * acc : ymove = ymove + Sin(ObjectAngle(obj_ship)) * acc
+        CloneObjectPosition pem_thrust, obj_ship
+        RotateObject pem_thrust, ObjectAngle(obj_ship)+180
+        ParticleEmission  pem_thrust, 1, 4*fidl, 30
+    Else
+        ParticleEmission  pem_thrust, 5, 0, 5
+    EndIf
+    
+    Gosub HandleWormholes
+
+    TranslateObject obj_ship, xmove*corr(), ymove*corr()
+    If CheckBoundaries(obj_ship) <> 0 And MouseDown(2) Then Spark(ObjectX(obj_ship)+Rand(-2,2), ObjectY(obj_ship)+Rand(-2,2)): shields = shields - 3*corr()
+
+    Gosub HandleEnemies
+    Gosub HandleShots
+    DrawGame
+
+    UpdateEffects()
+
+    Color cbOrange   : Text 10,10,score
+    Color cbYellow   : Text 20+TextWidth(String("M",Len(Str(score)))),10,"x"+dec(multiplier,1)
+    Color cbDarkBlue : Text scrX-TextWidth("1000")-10,10,RoundUp(shields)
+
+    If KeyDown(cbkeyTab) Then Color cbDarkBlue : Text scrX-TextWidth(FPS()+" / 3")-10,scrY-30,FPS() + " / "+fidl
+
+    If Not SoundPlaying(ch_bgmusic) Then ch_bgmusic = PlaySound("../music/music"+Rand(1,numMusics)+".ogg")
+    If shields <= 0 Or KeyHit(1) Then ShowObject obj_ship, 0: ParticleEmission  pem_thrust, 5, 0, 5: ExplodeImage(img_ship, ObjectX(obj_ship)-8, -ObjectY(obj_ship)-8, 5,5, 50,400, 1,5, 0,0): Gosub KillEmitters: GameOver(score>HiScore(5)): Goto ResetGame
+
+    DrawScreen
+    If KeyHit(cbkeyF11) Then ScreenShot "../snaps/snap"+Rand(1000,9999)+".bmp"
+    If KeyHit(cbkeyF12) Then End
+    If KeyDown(cbkeyA) And KeyDown(cbkeyS) And KeyDown(cbkeyD) Then maxShields = 99999: shields = 99999
+Forever
+
+//********************************************************************************************//
+
+
+HandleWormholes:
+    For iHole.WORMHOLE = Each WORMHOLE
+        temp_ang#  = GetAngle2(obj_ship, iHole\obj)
+        temp_dist# = Distance2(obj_ship, iHole\obj)
+        If temp_dist < 16 Then shields = 0
+        xmove = xmove + grav / temp_dist * Cos(temp_ang)    // this isn't actual equation for gravity, but gives more satisfactory results
+        ymove = ymove + grav / temp_dist * Sin(temp_ang)
+        TurnObject iHole\obj, 1*corr()
+        If Rand(1,8-(fidl*2)) = 1 Then
+            newDot.wormholeDot = New(wormholeDot)
+            newDot\obj = MakeObject()
+            PaintObject newDot\obj, -img_particles(2)
+            newDot\rangeleft = Rand(140,200)
+            CloneObjectPosition newDot\obj, iHole\obj
+            RotateObject newDot\obj, Rand(0,359)
+            MoveObject newDot\obj, -newDot\rangeleft
+        EndIf
+        If iHole\mass => iHole\criticalmass Then
+            ExplodeImage(img_wormhole_expl, ObjectX(iHole\obj)-64, -ObjectY(iHole\obj)-64, 25,25, 100,400, 4,12, 0,0)
+            DeleteObject iHole\obj : Delete iHole
+        EndIf
+    Next iHole
+    For iDot.WORMHOLEdOT = Each WORMHOLEdOT     ' update little dots that move towards the hole
+        MoveObject iDot\obj, 3*corr()
+        iDot\rangeleft = iDot\rangeleft - 3*corr()
+        If iDot\rangeleft <= 0 Then DeleteObject iDot\obj: Delete iDot
+    Next iDot
+Return
+
+
+HandleShots:
+    For iProj.SHOT = Each SHOT
+        iProj\rangeleft = iProj\rangeleft - iProj\speed*corr()
+        MoveObject iProj\obj, iProj\speed*corr()
+        If CheckBoundaries(iProj\obj) <> 0 Then Spark(ObjectX(iProj\obj), ObjectY(iProj\obj)): iProj\rangeleft = 0
+        
+        For iEne.ENEMY = Each ENEMY
+            If Distance2(iProj\obj,iEne\obj) < 16 Then  'hit enemy
+                iEne\shields = iEne\shields - iProj\dmg
+                ExplodeImage(img_enemies(iEne\enetype), ObjectX(iEne\obj)-16, -ObjectY(iEne\obj)-16, 5,5, 5,50, 20,50, 0,0)
+            EndIf
+            If iEne\shields <= 0 Then   'enemy destroyed
+                eneCount-1
+                score = score + iEne\points * multiplier
+                If score => pointsToNextWp And weaponlvl < numWeapons Then weaponlvl+1: pointsToNextWp = pointsToNextWp + weapons(Int(Min(weaponlvl+1,maximum)),9)
+                ExplodeImage(img_enemies(iEne\enetype), ObjectX(iEne\obj), -ObjectY(iEne\obj), 5,5, 50,400, 3,10, 0,0)
+                If iEne\pem_trail <> 0 Then DeleteObject iEne\pem_trail: iEne\pem_trail = 0
+                DeleteObject iEne\obj
+                Delete iEne
+                iProj\rangeleft = 0
+                PlaySound snd_expl
+            EndIf
+        Next iEne
+
+        For iHole.WORMHOLE = Each WORMHOLE  'update gravity from wormholes
+            If Distance2(iProj\obj, iHole\obj) < 16 Then
+                iHole\mass = iHole\mass + iProj\dmg
+                iProj\rangeleft = 0
+            EndIf
+        Next iHole
+
+        If iProj\rangeleft <= 0 Then DeleteObject iProj\obj : Delete iProj
+    Next iProj
+Return
+
+
+HandleEnemies:
+    For iEne.ENEMY = Each ENEMY
+        delThis = False
+        If iEne\rotate > 0 Then TurnObject iEne\obj, iEne\rotate*corr()
+        If iEne\speed  > 0 Then TranslateObject iEne\obj, Cos(iEne\dir)*iEne\speed*corr(), Sin(iEne\dir)*iEne\speed*corr()
+        
+        For iHole.WORMHOLE = Each WORMHOLE 
+            temp_dist# = Distance2(iEne\obj, iHole\obj)
+            If temp_dist < 16 Then  'hole took this one
+                iHole\mass = iHole\mass + iEne\dmg
+                delThis = True
+            Else                    'update gravity from wormholes
+                temp_ang#  = GetAngle2(iEne\obj, iHole\obj)
+                TranslateObject iEne\obj, 10*grav / temp_dist * Cos(temp_ang)*corr(), 10*grav / temp_dist * Sin(temp_ang)*corr()
+            EndIf
+        Next iHole
+
+        'bounce from walls
+        If CheckBoundaries(iEne\obj,32) > 0 Then iEne\dir = Rand(0,359)
+        'target player
+        If iEne\homing > 0 Then
+            targetang# = GetAngle2(iEne\obj,obj_ship)
+            If iEne\homing => 180 Then
+                iEne\dir = targetang
+            Else
+                iEne\dir = NearestAngle(targetang, Float(iEne\dir + iEne\homing), Float(iEne\dir - iEne\homing))
+            EndIf
+        EndIf
+        'turn randomly
+        If iEne\turningfreq > 0 And Timer() > iEne\turningtimer + iEne\turningfreq Then
+            If iEne\turning = 0 Then iEne\dir = Rand(0,359) Else iEne\dir = WrapAngle(Rand(dir-iEne\turning,dir+iEne\turning))
+            iEne\turningtimer = Timer()
+        EndIf
+        'hit player?
+        If Distance2(iEne\obj,obj_ship) < 64 Then
+            If ObjectsOverlap(iEne\obj, obj_ship, 3) Then
+                shields = shields - iEne\dmg
+                multiplier = 1.0
+                delThis = True
+            EndIf
+        EndIf
+        
+        If iEne\pem_trail <> 0 Then CloneObjectPosition iEne\pem_trail, iEne\obj: RotateObject iEne\pem_trail, iEne\dir+180
+        
+        If delThis = True Then
+            ExplodeImage(img_enemies(iEne\enetype), ObjectX(iEne\obj), -ObjectY(iEne\obj), 5,5, 50,400, 3,10, 0,0)
+            eneCount-1
+            If iEne\pem_trail <> 0 Then DeleteObject iEne\pem_trail: iEne\pem_trail = 0
+            DeleteObject iEne\obj
+            Delete iEne
+            PlaySound snd_expl
+        EndIf
+    Next iEne
+Return
+
+
+ResetGame:
+    For iEne.ENEMY = Each ENEMY
+        eneCount-1
+        If iEne\pem_trail <> 0 Then DeleteObject iEne\pem_trail: iEne\pem_trail = 0
+        DeleteObject iEne\obj : Delete iEne    
+    Next iEne
+    For iHole.WORMHOLE = Each WORMHOLE
+        DeleteObject iHole\obj: Delete iHole
+    Next iHole
+    For iDot.WORMHOLEdOT = Each WORMHOLEdOT
+        DeleteObject iDot\obj : Delete iDot
+    Next iDot
+    For iProj.SHOT = Each SHOT
+        DeleteObject iProj\obj: Delete iProj
+    Next iProj
+Goto Start
+
+KillEmitters:
+    For iEne.ENEMY = Each ENEMY
+        If iEne\pem_trail <> 0 Then DeleteObject iEne\pem_trail: iEne\pem_trail = 0
+    Next iEne
+Return
+
+
+Function Pause()
+    ClearKeys
+    cnt = CountObjects()
+    Repeat
+        UpdateFrameTimer()
+        DrawGame
+        Color cbGreen    : CenterText scrX/2, scrY/2, "- Paused -", 2
+        Color cbOrange   : Text 10,10,score
+        Color cbDarkBlue : Text scrX-TextWidth("1000")-10,10,RoundUp(shields)
+        Color cbDarkBlue : CenterText scrX/2,scrY-TextHeight("I")-10, "Weapon lvl: "+weaponlvl+" - Enemies: "+eneCount+" - Objects: "+cnt
+        DrawScreen
+    Until GetKey() <> 0
+    ClearKeys
+End Function
+
+
+Function GameOver(_hiscore=0)
+    ClearKeys
+    Repeat    
+        DrawGame
+        UpdateEffects()
+        Color cbOrange   : Text 10,10,score
+        Color cbDarkBlue : Text scrX-TextWidth(0)-10,10,0
+        If _hiscore Then
+            Color cbDarkRed : CenterText scrX/2, scrY/2+15, "You made it to the Hi-Scores!", 2
+            Color cbOrange
+            name$ = FlashInput(scrX/2-140,scrY/2+50,"Enter name: ",name$,9)
+            SetFont font
+            If KeyHit(cbKeyReturn) And name <> "" Then HiNames(5) = Left(name,10): HiScore(5) = score: ArrangeHiScore(): SaveHiScore(): CloseInput: Exit
+        Else
+            If GetKey() <> 0 Then Exit
+        EndIf
+        Color cbRed: CenterText scrX/2, scrY/2-20, "Game Over!", 2
+        DrawScreen
+    Forever
+    ClearKeys
+    StopSound(ch_bgmusic)
+    Menu()
+End Function
+
+
+Function CheckBoundaries(_obj,_offset=24)
+    collision = 0
+    If ObjectX(_obj) < -ObjectSizeX(border)/2+_offset Then PositionObject _obj, -ObjectSizeX(border)/2+_offset, ObjectY(_obj)          : collision = 1
+    If ObjectX(_obj) > ObjectSizeX(border) /2-_offset Then PositionObject _obj, ObjectSizeX(border) /2-_offset, ObjectY(_obj)          : collision = 2
+    If ObjectY(_obj) < -ObjectSizeY(border)/2+_offset Then PositionObject _obj, ObjectX(_obj)         , -ObjectSizeY(border)/2+_offset : collision = 4
+    If ObjectY(_obj) > ObjectSizeY(border) /2-_offset Then PositionObject _obj, ObjectX(_obj)         , ObjectSizeY(border) /2-_offset : collision = 8
+    Return collision
+End Function
+
+// Calculate firing angles for current weapon and call FireShot() for every barrel
+Function Fire(_x, _y, _ang, _spd0, _wp=1)
+    arc     = weapons(_wp,6)
+    barrels = weapons(_wp,5)
+    iArc    = -arc/2
+    For i = 1 To barrels
+        FireShot(_x, _y, _ang + iArc, _spd0, _wp)
+        If barrels>1 Then iArc = iArc + (arc/(barrels-1))
+    Next i
+    If weapons(_wp,7) > 0 Then  // rear guns
+        arc     = weapons(_wp,8)
+        barrels = weapons(_wp,7)
+        iArc    = -arc/2
+        For i = 1 To barrels
+            FireShot(_x, _y, 180 + _ang + iArc, _spd0, _wp)
+            If barrels>1 Then iArc = iArc + (arc/(barrels-1))
+        Next i    
+    EndIf
+    PlaySound snd_shot1,70,0,22000-(_wp*1000)
+End Function
+
+// Fire a single shot
+Function FireShot(_x, _y, _ang, _spd0, _wp=1)
+    newShot.SHOT      = New(SHOT)
+    newShot\obj       = CloneObject(obj_shots(Int(weapons(_wp,1))))
+    newShot\rangeleft = weapons(_wp,4)
+    newShot\speed     = weapons(_wp,3) + _spd0
+    newShot\dmg       = weapons(_wp,2)
+    PositionObject newShot\obj, _x, _y
+    RotateObject newShot\obj, _ang * Rnd(.99,1.01)
+    MoveObject newShot\obj, 8
+End Function
+
+
+Function SpawnEnemy(_type, _x, _y)
+    newEne.ENEMY       = New(ENEMY)
+    newEne\enetype     = _type
+    newEne\obj         = CloneObject(obj_enemies(_type))
+    newEne\points      = enemystats(_type,1)
+    newEne\dmg         = enemystats(_type,2)
+    newEne\speed       = Float(enemystats(_type,3))
+    newEne\shields     = enemystats(_type,4)
+    newEne\homing      = enemystats(_type,5)
+    newEne\rotate      = enemystats(_type,6)
+    newEne\turning     = enemystats(_type,7)
+    newEne\turningfreq = enemystats(_type,8)
+    PositionObject newEne\obj, _x, _y
+    newEne\dir = Rand(0,359)
+    trailId = enemystats(_type,9)
+    If trailId > 0 Then
+        newEne\pem_trail = MakeObject()
+        newEne\pem_trail = MakeEmitter(img_particles(trailId),20+fidl*5)
+        ParticleAnimation newEne\pem_trail, particleframes(trailId)
+        ParticleMovement  newEne\pem_trail, 1,0
+        ParticleEmission  newEne\pem_trail, 2,fidl,30
+        CloneObjectPosition newEne\pem_trail, newEne\obj
+        RotateObject newEne\pem_trail, newEne\dir+180
+    EndIf
+    ExplodeImage(img_jump, _x-16, -_y-16, 8,8, 20,25, 4,5, 0,0)
+    eneCount+1
+End Function
+
+
+Function Spark(_x, _y)
+    dir     = 0         // Partikkelien lähtösuunta
+    range   = 360       // Kuinka laajalle alueelle partikkelit leviää. Alkaen kulmasta "dir"
+    amount  = 5*fidl +15(fidl=>3)  // Partikkelien lukumäärä
+    size1   = 1         // Pienin mahdollinen partikkeli
+    size2   = 2         // Suurin mahdollinen partikkeli
+    speed1  = 10        // Pienin lähtönopeus (pikseliä sekunnissa)
+    speed2  = 200       // Suurin lähtönopeus (pikseliä sekunnissa)
+    shrink1 = 5         // Pienin yksittäisen partikkelin kutistuma (pikseliä sekunnissa)
+    shrink2 = 5         // Suurin yksittäisen partikkelin kutistuma (pikseliä sekunnissa)
+    fade1   = 10        // Vaalennus/tummennus. Pienin nopeus (väriarvoa sekunnissa)
+    fade2   = 50        // Vaalennus/tummennus. Suurin nopeus (väriarvoa sekunnissa)
+    colors$ = ":r255|:r255,g255"   // Partikkelin väri on aina punainen
+    CreateColorParticleEffect(_x, _y, dir, range, amount, size1, size2, speed1, speed2, shrink1, shrink2, fade1, fade2, 0, 0, colors)
+    Return True
+End Function
+
+
+// Reads a value from opened file
+Function ReadValue$(f, keyword$, def="0")
+    If f = 0 Then Return def
+    SeekFile f,0
+	keyword = Lower(keyword)
+	While Not EOF(f)
+		row$ = ReadLine(f)
+        If Lower(Trim(GetWord(row$, 1, "="))) = keyword$ Then Return Trim(GetWord(row$, 2, "="))
+	Wend
+	Return def
+End Function
+
+// Loads enemy stats from a file
+Function LoadEnemy(_id)
+    f = OpenToRead("enemy"+Str(_id)+".dat")
+    enemystats(_id,0) = _id
+    enemystats(_id,1) = Int(ReadValue(f,"points","10"))
+    enemystats(_id,2) = Int(ReadValue(f,"damage","50"))
+    enemystats(_id,3) = Float(ReadValue(f,"speed","0"))
+    enemystats(_id,4) = Int(ReadValue(f,"shields","10"))
+    enemystats(_id,5) = Int(ReadValue(f,"homing","0"))
+    enemystats(_id,6) = Int(ReadValue(f,"rotate","0"))
+    enemystats(_id,7) = Int(ReadValue(f,"turning","0"))
+    enemystats(_id,8) = Int(ReadValue(f,"turningfreq","0"))
+    enemystats(_id,9) = Int(ReadValue(f,"trail","0"))
+    CloseFile f
+End Function
+
+// Loads the stats of all weapons
+Function LoadWeapons(file$)
+    f=OpenToRead(file$)
+    i=0
+    While Not EOF(f)
+        row$ = Trim(ReadLine(f))
+        key$ = GetWord(row,1,"=")
+        If row = "[weapon]" Then
+            i+1
+            weapons(i,0) = i
+            weapons(i,1) = 1
+            weapons(i,9) = 2000
+        ElseIf key = "ammotype" Then
+            weapons(i,1) = Trim(GetWord(row$,2,"="))
+        ElseIf key = "damage" Then
+            weapons(i,2) = Trim(GetWord(row$,2,"="))
+        ElseIf key = "speed" Then
+            weapons(i,3) = Trim(GetWord(row$,2,"="))
+        ElseIf key = "range" Then
+            weapons(i,4) = Trim(GetWord(row$,2,"="))
+        ElseIf key = "barrels" Then
+            weapons(i,5) = Trim(GetWord(row$,2,"="))
+        ElseIf key = "arc" Then
+            weapons(i,6) = Trim(GetWord(row$,2,"="))
+        ElseIf key = "rearbarrels" Then
+            weapons(i,7) = Trim(GetWord(row$,2,"="))
+        ElseIf key = "reararc" Then
+            weapons(i,8) = Trim(GetWord(row$,2,"="))
+        ElseIf key = "points" Then
+            weapons(i,9) = Trim(GetWord(row$,2,"="))
+        EndIf
+    Wend
+    numWeapons = i
+    CloseFile f
+End Function
+
+
+// Palauttaa kulman (ang1 tai ang2), joka on lähimpänä kulmaa ang
+Function NearestAngle#(ang#,ang1#,ang2#) 'by Astigma
+   ang1 = WrapAngle(ang1)
+   ang2 = WrapAngle(ang2)
+   If Distance(Cos(ang),Sin(ang),Cos(ang1),Sin(ang1)) < Distance(Cos(ang),Sin(ang),Cos(ang2),Sin(ang2)) Then Return ang1 Else Return ang2
+End Function
+
+// Returns the number with given amount of decimals
+Function dec#(num#,decims)
+    If decims = 0 Then Return Int(num)
+    ret# = Int(num*10^decims)
+    Return ret#/10^decims
+End Function
+
+
+Function DrawHiScore()
+    Color 128,0,0
+    DrawImage img_hiscores, scrX*.75-ImageWidth(img_hiscores)/2, scrY*.33
+    Color 90,10,160
+        CenterText scrX*.75,scrY*.33+TextHeight("I")*3,"..."
+        Text scrX*.75 - TextWidth("Name") - TextWidth("   .."), scrY*.33+TextHeight("I")*3, "Name"
+        Text scrX*.75 + TextWidth("   .."), scrY*.33+TextHeight("I")*3, "Scores"
+    Color 70,10,180
+    For i = 1 To 5
+        CenterText scrX*.75,scrY*.33+TextHeight("I")*(i+4),"..."
+        Text scrX*.75 - TextWidth(HiNames(i)) - TextWidth("   .."), scrY*.33+TextHeight("I")*(i+4), HiNames(i)
+        Text scrX*.75 + TextWidth("   .."), scrY*.33+TextHeight("I")*(i+4), HiScore(i)
+    Next i
+End Function
+
+
+Function LoadHiScore()
+    Decrypt "hiscore.dat", "hiscore.dat", cryptword
+    f = OpenToRead("hiscore.dat")
+    For i = 1 To His
+        HiNames(i) = ReadString(f)
+        HiScore(i) = ReadInt(f)
+    Next i
+    CloseFile f
+    Encrypt "hiscore.dat", "hiscore.dat", cryptword
+End Function
+
+
+Function SaveHiScore()
+    f = OpenToWrite("hiscore.dat")
+    For i = 1 To His
+        WriteString f, HiNames(i)
+        WriteInt f, HiScore(i)
+    Next i
+    CloseFile f
+    Encrypt "hiscore.dat", "hiscore.dat", cryptword
+End Function
+
+
+Function ResetHiScore()
+    If FileExists("hiscore.dat") Then DeleteFile "hiscore.dat"
+    f = OpenToWrite("hiscore.dat")
+        For i = 1 To His
+            WriteString f, "Empty"
+            WriteInt f, 1000
+        Next i
+    CloseFile f
+    Encrypt "hiscore.dat", "hiscore.dat", cryptword
+    WriteLog("Hi-Scores reset.")
+End Function
+
+
+Function ArrangeHiScore()
+    For i=1 To His
+        For j=1 To His-i
+            If HiScore(j+1) > HiScore(j) Then
+                tmp = HiScore(j) : tmpname$ = HiNames(j)   
+                HiScore(j) = HiScore(j+1) : HiNames(j) = HiNames(j+1)
+                HiScore(j+1) = tmp : HiNames(j+1) = tmpname$
+            EndIf
+        Next j
+    Next i
+End Function
+
+
+// MAIN MENU //
+Function Menu()
+    DrawToWorld OFF,OFF,OFF
+    ch_menuloop = PlaySound("menuloop.mp3")
+    ShowMouse cursor
+    startgame=0
+    Repeat
+        DrawGame
+        If KeyUp(cbkeyR) Then ResetHiScore(): LoadHiScore()
+        DrawImage img_title, scrX/2 - ImageWidth(img_title)/2, 50
+        overb=0
+        For i = 0 To 2
+            but_x = scrX*.25 - ImageWidth(img_buttons(i,0))/2
+            but_y = scrY*.33 + i*80
+            If ImagesCollide(img_buttons(i,0),but_x,but_y,0, cursor,MouseX(),MouseY(),0) Then
+                overb=1: glow=1
+                If beeped = 0 Then PlaySound snd_click, 100: beeped = 1
+            Else
+                glow=0
+            EndIf
+            If MouseHit(1) And glow Then
+                Select i
+                    Case 0 : startgame=1
+                    Case 1 : Instructions()
+                    Case 2 : End
+                End Select
+            EndIf
+            DrawImage img_buttons(i,glow), but_x, but_y
+        Next i
+        If overb=0 Then beeped=0
+        DrawHiScore()
+        If isMod Then Color cbRed: Text 10,10,"Mod"
+        Color 20,20,20: Text scrX-TextWidth("A Game by Tapio Vierros")-5, scrY-TextHeight("I")-5, "A Game by Tapio Vierros"
+        Color 30,30,50: Text 5, scrY-TextHeight("I")-5, "Version "+version
+        DrawScreen
+        If KeyHit(cbkeyF11) Then ScreenShot "../snaps/snap"+Rand(1000,9999)+".bmp"
+        If KeyHit(cbkeyF12) Then End
+        If Not SoundPlaying(ch_menuloop) Then ch_menuloop = PlaySound("menuloop.mp3")
+    Until startgame=1
+    StopSound ch_menuloop
+    DrawToWorld ON,ON,OFF
+    ShowMouse crosshair
+    ClearMouse
+End Function
+
+
+Function Instructions()
+    ClearKeys: ClearMouse
+    Repeat
+        DrawGame:Cls
+        DrawImage img_help,(scrX-ImageWidth(img_help))/2,(scrY-ImageHeight(img_help))/2
+        DrawScreen
+        If Not SoundPlaying(ch_menuloop) Then ch_menuloop = PlaySound("menuloop.mp3")
+    Until GetKey() <> 0 Or GetMouse() <> 0
+    ClearKeys: ClearMouse
+End Function
+
+// Päivitetään vakionopeusajastin
+Function UpdateFrameTimer()
+    curTime = Timer()
+    If g_tmpTime = 0 Then g_tmpTime = curTime
+    g_frameTime = (curTime - g_tmpTime) / 1000.0
+    g_tmpTime = curTime
+End Function
+
+Function corr#()
+    Return g_frameTime*60.0
+End Function
+
+
+Function WriteLog(txt$,file$="log.txt")
+    f = OpenToEdit(file$)
+        SeekFile f, FileSize(file$)
+        WriteLine f, txt$
+    CloseFile f    
+End Function    
+
+
+Function CountObjects()
+    InitObjectList
+    Repeat
+        i + 1
+        obj = NextObject()
+    Until obj = 0
+    Return i-1
+End Function
+
+// Laskee tarkistussumman aseiden ja vihollisten statseista
+Function CheckHash()
+    For k = 1 To 16
+        For i = 1 To maximum
+            For j = 1 To 10
+                temp = temp + ((enemystats(i,j) + weapons(i,j))*k) Mod (k+i*j)
+            Next j
+        Next i
+        sum$ = sum$ + Right(Hex(temp), 1)
+    Next k
+    WriteLog(sum$)
+    If sum$ = "69861F7713F4703F" Then Return 0 Else Return 1
+End Function
+
+
+Function Loading(pers=0)
+    DrawImage img_loading, scrX/2-ImageWidth(img_loading)/2,scrY/2-ImageHeight(img_loading)/2
+    Color cbDarkBlue
+    Line scrX/2-ImageWidth(img_loading)/2,scrY/2+ImageHeight(img_loading)/2,  scrX/2-ImageWidth(img_loading)/2 + ImageWidth(img_loading)*(pers/100.0)  ,scrY/2+ImageHeight(img_loading)/2
+    DrawScreen
+End Function

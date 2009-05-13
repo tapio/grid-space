@@ -1,0 +1,304 @@
+// CoolBasic Software Development Kit
+// FILE: cbGraphics.cb
+// VERSION: revision 4
+// CONTENTS: Special effects
+// Last Updated: 29.03.2006
+
+//* Modified version *//
+
+
+// TEXT EFFECT
+Const MAXFLASHSIZE = 100
+Dim flashfont(MAXFLASHSIZE)
+Global gFlashFontSize
+Global gFlashFontStartSize
+// Lataa fontin flashinputtia varten
+Function InitFlashFont(fontname$="Times",size=16,bigsize=100)
+    gFlashFontSize = size
+    gFlashFontStartSize = bigsize
+    For i = 1 To MAXFLASHSIZE
+        flashfont(i) = LoadFont(fontname$,i)
+    Next i
+    flashfont(0) = LoadFont(fontname$,size)
+End Function
+
+Global gFlash As Integer
+Global gFXChar As String
+Global gFXbackspacetime,gFXbackspacelasttime,gFXbackspacefirsttime
+// Toteuttaa FlashInputin
+Function FlashInput(x#,y#,txt$,st$,speed=4,size=-1,bigsize=-1)
+    If flashfont(0) = 0 Then InitFlashFont()
+    If gFlash = 0 Then gFlash = gFlashFontStartSize
+    
+    If size => 0 Then gFlashFontSize = size
+    If bigsize => 0 Then gFlashFontStartSize = bigsize
+    
+    key = GetKey()
+    For ascii_table_1 = 32 To 126
+        If key = ascii_table_1 Or key = 145 Then gFXChar = gFXChar + Chr(key)
+    Next ascii_table_1
+    For ascii_table_2 = 161 to 255
+        If key = 146 Or key = ascii_table_2 Then gFXChar = gFXChar + Chr(key)
+    Next ascii_table_2
+
+
+    If Len(st ) > 0 Then
+        If KeyHit(14) Then st  = Left(st,Len(st)-1)
+        If KeyDown(14) Then
+            If gFXbackspacelasttime=1 Then
+                gFXbackspacetime=gFXbackspacetime+1
+                gFXbackspacefirsttime=gFXbackspacefirsttime+1
+                If gFXbackspacetime>1 And gFXbackspacefirsttime>20 Then
+                    st = Left(st,Len(st)-1)
+                    gFXbackspacetime=0
+                EndIf
+            EndIf
+            gFXbackspacelasttime=1
+        Else
+            gFXbackspacelasttime=0
+            gFXbackspacefirsttime=0
+        EndIf
+    EndIf
+
+    SetFont flashfont(0)
+    Text x,y,txt+st 
+    tw = TextWidth(txt+st)
+    th = TextHeight("I")
+
+    If gFXChar <> "" Then
+        gFlash-speed
+        If Len(gFXChar) > 1 Then st = st + Left(gFXChar,Len(gFXChar)-1): gFXChar = Right(gFXChar,1): gFlash = gFlashFontStartSize
+        If gFlash < gFlashFontSize Then 
+            st = st + gFXChar
+            gFXChar = ""
+            gFlash = gFlashFontStartSize
+        EndIf
+        SetFont flashfont(gFlash)
+        CenterText x + tw,y+th/2,gFXChar,1
+    Else
+        Line x+tw,y,x+tw,y+th
+    EndIf
+    Return st 
+End Function
+// TEXT EFFECT
+
+
+
+// EXPLODEIMAGE
+Type FX_EXPLODECHIPS
+    Field img
+    Field sx As Float
+    Field sy As Float
+    Field sw As Float
+    Field sh As Float
+    Field x As Float
+    Field y As Float
+    Field vx As Float
+    Field vy As Float
+    Field gx As Float
+    Field gy As Float
+    Field shrink As Float
+EndType
+
+Function ExplodeImage(_image, _x, _y, _splitX, _splitY, _speedMin#, _speedMax#, _shrinkMin#, _shrinkMax#, _gravityX#, _gravityY#)
+    If _splitX <= 0 Or _splitY <= 0 Then Return False
+    If _splitX = 1 And _splitY = 1 Then Return False
+    lImageWidth = ImageWidth(_image)
+    lImageheight = ImageHeight(_image)
+    xs = lImageWidth / _splitX
+    ys = lImageheight / _splitY
+    For x = 0 To _splitX - 1
+        For y = 0 To _splitY - 1
+            chip.FX_EXPLODECHIPS = New(FX_EXPLODECHIPS)
+            chip\img = _image
+            chip\sx = x * xs
+            chip\sy = y * ys
+            chip\sw = xs
+            chip\sh = ys
+            chip\x = _x + x * xs
+            chip\y = _y + y * ys
+            angle# = GetAngle(lImageWidth / 2, lImageHeight / 2, x * xs + xs/2, y * ys + ys/2) + 90
+            speed# = Rnd(_speedMin, _speedMax)
+            chip\vx = Sin(angle) * speed
+            chip\vy = Cos(angle) * speed
+            chip\gx = _gravityX
+            chip\gy = _gravityY
+            chip\shrink = Rnd(_shrinkMin, _shrinkMax)
+        Next y
+    Next x
+EndFunction
+
+Global gFXFrameTime#, gFXTmpTime
+gFXFrameTime = 0.0
+gFXTmpTime = 0
+
+Function UpdateImageExplode()
+    For chip.FX_EXPLODECHIPS = Each FX_EXPLODECHIPS
+        x# = chip\x
+        y# = chip\y
+        chip\vx = chip\vx + chip\gx * gFXFrameTime
+        chip\vy = chip\vy + chip\gy * gFXFrameTime
+        DrawImageBox chip\img, x, y, chip\sx, chip\sy, chip\sw, chip\sh
+        chip\x = x + chip\vx * gFXFrameTime
+        chip\y = y + chip\vy * gFXFrameTime
+        chip\sw = chip\sw - chip\shrink * gFXFrameTime
+        chip\sh = chip\sh - chip\shrink * gFXFrameTime
+        If chip\sw <= 0 Or chip\sh <= 0 Then
+            Delete chip
+        EndIf
+    Next chip
+EndFunction
+
+
+
+Function UpdateEffects()
+    curTime = Timer()
+    If gFXTmpTime = 0 Then gFXTmpTime = curTime
+    gFXFrameTime = (curTime - gFXTmpTime) / 1000.0
+    gFXTmpTime = curTime
+    If gFXFrameTime > 1.0 Then gFXFrameTime = 0.0
+    
+    UpdateParticleEffects()
+    UpdateImageExplode()
+EndFunction
+// EXPLODEIMAGE
+
+
+// PARTICLE EFFECTS
+
+Const ECS_RED       = 1
+Const ECS_GREEN     = 2
+Const ECS_BLUE      = 3
+Const ECS_MINCOLOR  = 4
+Const ECS_MAXCOLOR  = 5
+
+Dim aEffectColorSet(0, 5)
+Global g_ColorSetCount
+g_ColorSetCount = 0
+
+Type FX_COLORPARTICLES
+    Field ColorR        As Float
+    Field ColorG        As Float
+    Field ColorB        As Float
+    Field PosX          As Float
+    Field PosY          As Float
+    Field VelX          As Float
+    Field VelY          As Float
+    Field Size          As Float
+    Field Shrink        As Float
+    Field Fadevar       As Float
+    Field GravityX      As Float
+    Field GravityY      As Float
+End Type
+
+Global lastEffectUpdate
+lastEffectUpdate = Timer()
+
+Function UpdateParticleEffects()
+    //If lastEffectUpdate = 0 Then lastEffectUpdate = Timer()
+    currentTime = Timer()
+    et# = (currentTime - lastEffectUpdate) / 1000.0
+    lastEffectUpdate = currentTime
+    
+    For particle.FX_COLORPARTICLES = Each FX_COLORPARTICLES
+        del = False
+        x# = particle\PosX
+        y# = particle\PosY
+        s# = particle\Size
+        Color particle\ColorR, particle\ColorG, particle\ColorB
+        Circle x - s / 2, y - s / 2, s, ON
+        
+        particle\PosX = particle\PosX + particle\VelX * et
+        particle\PosY = particle\PosY + particle\VelY * et
+        particle\VelX = particle\VelX + particle\GravityX * et
+        particle\VelY = particle\VelY + particle\GravityY * et
+        particle\Size = Max(0, particle\Size - particle\Shrink * et)
+        If particle\Size <= 0 Then del = True
+        particle\ColorR = Min(255, Max(0, particle\ColorR + particle\Fadevar * et))
+        particle\ColorG = Min(255, Max(0, particle\ColorG + particle\Fadevar * et))
+        particle\ColorB = Min(255, Max(0, particle\ColorB + particle\Fadevar * et))
+        If particle\ColorR <= 0 And particle\ColorG <= 0 And particle\ColorB <= 0 Then del = True
+        If del = True Then Delete particle
+    Next particle
+    Return True
+End Function
+
+Function CreateColorParticleEffect(x#, y#, dir#, range#, amount, size1#, size2#, speed1#, speed2#, shrink1#, shrink2#, fade1#, fade2#, gx#, gy#, colors$)
+    ParseColorSet(colors)
+    For i = 1 To amount
+        colorSetNum = Rand(1, g_ColorSetCount)
+        r = aEffectColorSet(colorSetNum, ECS_RED)
+        g = aEffectColorSet(colorSetNum, ECS_GREEN)
+        b = aEffectColorSet(colorSetNum, ECS_BLUE)
+        minColor = aEffectColorSet(colorSetNum, ECS_MINCOLOR)
+        maxColor = aEffectColorSet(colorSetNum, ECS_MAXCOLOR)
+        c = Rand(minColor, maxColor)
+        If r = -1 Then r = c
+        If g = -1 Then g = c
+        If b = -1 Then b = c
+    
+        angle# = Rnd(0, range) + dir + 90
+        speed# = Rnd(speed1, speed2)
+        drop.FX_COLORPARTICLES  = New(FX_COLORPARTICLES)
+        drop\ColorR     = r
+        drop\ColorG     = g
+        drop\ColorB     = b
+        drop\PosX       = x
+        drop\PosY       = y
+        drop\VelX       = Sin(angle) * speed
+        drop\velY       = Cos(angle) * speed
+        drop\Size       = Rnd(size1, size2)
+        drop\Shrink     = Rnd(shrink1, shrink2)
+        drop\Fadevar    = Rnd(fade1, fade1)
+        drop\GravityX   = gx
+        drop\GravityY   = gy
+    Next i
+    Return True
+End Function
+
+Function ParseColorSet(colors$)
+    numSets = CountWords(colors, "|")
+    g_ColorSetCount = numSets
+    ReDim aEffectColorSet(numSets, 5)
+    For i = 1 To numSets
+        colorSet$ = GetWord(colors, i, "|")
+        colorElementSets = CountWords(colorSet, ":")
+        colorElementSet$ = GetWord(colorSet, 1, ":")
+        colorElements$ = Upper(GetWord(colorElementSet, 1, ","))
+        colorValues$ = GetWord(colorElementSet, 2, ",")
+        minColor = 0
+        maxColor = 0
+        If CountWords(colorValues, "-") > 1 Then
+            minColor = Int(GetWord(colorValues, 1, "-"))
+            maxColor = Int(GetWord(colorValues, 2, "-"))
+        Else
+            minColor = Int(colorValues)
+            maxColor = minColor
+        EndIf
+        aEffectColorSet(i, ECS_RED)      = 0
+        aEffectColorSet(i, ECS_GREEN)    = 0
+        aEffectColorSet(i, ECS_BLUE)     = 0
+        aEffectColorSet(i, ECS_MINCOLOR) = minColor
+        aEffectColorSet(i, ECS_MAXCOLOR) = maxColor
+        For j = 1 To Len(colorElements)
+            ce$ = Mid(colorElements, j, 1)
+            If ce = "R" Then aEffectColorSet(i, ECS_RED) = -1
+            If ce = "G" Then aEffectColorSet(i, ECS_GREEN) = -1
+            If ce = "B" Then aEffectColorSet(i, ECS_BLUE) = -1
+        Next j
+        if colorElementSets > 1 Then
+            constantColors$ = GetWord(colorSet, 2, ":")
+            numConstants = CountWords(constantColors, ",")
+            For j = 1 To numConstants
+                constantColor$ = Upper(GetWord(constantColors, j, ","))
+                If Mid(constantColor, 1, 1) = "R" Then aEffectColorSet(i, ECS_RED) = Int(Mid(constantColor, 2))
+                If Mid(constantColor, 1, 1) = "G" Then aEffectColorSet(i, ECS_GREEN) = Int(Mid(constantColor, 2))
+                If Mid(constantColor, 1, 1) = "B" Then aEffectColorSet(i, ECS_BLUE) = Int(Mid(constantColor, 2))
+            Next j
+        EndIf
+    Next i
+    Return True
+End Function
+
+
+

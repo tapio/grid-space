@@ -1,0 +1,10 @@
+name=Box
+points=600
+damage=850
+speed=2
+shields=8000
+homing=10
+
+# Allthough being slow, this red menace can
+# take quite a bit of punishment and will
+# hurt very much when hit.

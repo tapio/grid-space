@@ -1,0 +1,10 @@
+name=Greeny
+points=50
+damage=200
+speed=3
+shields=200
+homing=180
+rotate=3
+trail=3
+
+# This guy just tries to catch the player.
